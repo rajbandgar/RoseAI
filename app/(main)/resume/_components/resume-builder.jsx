@@ -12,7 +12,6 @@ import {
   Save,
 } from "lucide-react";
 import { toast } from "sonner";
-import MDEditor from "@uiw/react-md-editor";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,18 +22,28 @@ import useFetch from "@/hooks/use-fetch";
 import { useUser } from "@clerk/nextjs";
 import { entriesToMarkdown } from "@/app/lib/helper";
 import { resumeSchema } from "@/app/lib/schema";
-import * as html2pdf from "html2pdf.js";
+import dynamic from "next/dynamic";
 
-// import { html2pdf } from "html2pdf.js";
-// import html2pdf from 'html2pdf.js';
-// import html2pdf from "html2pdf.js";
+// Dynamic imports for heavy libraries to reduce initial bundle size
+const MDEditor = dynamic(() => import("@uiw/react-md-editor"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-64 bg-muted rounded-md">
+      <Loader2 className="h-6 w-6 animate-spin" />
+      <span className="ml-2">Loading editor...</span>
+    </div>
+  ),
+});
 
+// Dynamic import for html2pdf to load only when needed
+const loadHtml2Pdf = () => import("html2pdf.js");
 
 export default function ResumeBuilder({ initialContent }) {
   const [activeTab, setActiveTab] = useState("edit");
   const [previewContent, setPreviewContent] = useState(initialContent);
   const { user } = useUser();
   const [resumeMode, setResumeMode] = useState("preview");
+  const [isExporting, setIsExporting] = useState(false);
 
   const {
     control,
@@ -118,8 +127,10 @@ export default function ResumeBuilder({ initialContent }) {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const generatePDF = async () => {
-    setIsGenerating(true);
+    setIsExporting(true);
     try {
+      // Dynamically load html2pdf only when needed
+      const html2pdf = await loadHtml2Pdf();
       const element = document.getElementById("resume-pdf");
       const opt = {
         margin: [15, 15],
@@ -129,11 +140,13 @@ export default function ResumeBuilder({ initialContent }) {
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
       };
 
-      await html2pdf().set(opt).from(element).save();
+      await html2pdf.default().set(opt).from(element).save();
+      toast.success("PDF downloaded successfully!");
     } catch (error) {
       console.error("PDF generation error:", error);
+      toast.error("Failed to generate PDF. Please try again.");
     } finally {
-      setIsGenerating(false);
+      setIsExporting(false);
     }
   };
 
@@ -175,8 +188,8 @@ export default function ResumeBuilder({ initialContent }) {
               </>
             )}
           </Button>
-          <Button onClick={generatePDF} disabled={isGenerating}>
-            {isGenerating ? (
+          <Button onClick={generatePDF} disabled={isExporting}>
+            {isExporting ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Generating PDF...
